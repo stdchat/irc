@@ -1960,7 +1960,7 @@ func ircMsgInfo(msg *stdchat.ChatMsg) (dest, ircMsg string, err error) {
 	return
 }
 
-func (client *Client) Handler(tp service.Transporter, msg *stdchat.ChatMsg) {
+func (client *Client) Handler(msg *stdchat.ChatMsg) {
 	/* // Not doing this, don't modify caller's msg...
 	if msg.Network.ID == "" {
 		msg.Network.Init(client.NetworkID(), "net")
@@ -1976,43 +1976,43 @@ func (client *Client) Handler(tp service.Transporter, msg *stdchat.ChatMsg) {
 	case "msg", "msg/irc.PRIVMSG":
 		dest, ircMsg, err := ircMsgInfo(msg)
 		if err != nil {
-			tp.PublishError(service.MakeID(msg.ID), msg.Network.ID, err)
+			client.tp.PublishError(service.MakeID(msg.ID), msg.Network.ID, err)
 		} else {
 			client.SendMsg(dest, ircMsg)
 		}
 	case "msg/action", "msg/action/irc.PRIVMSG.CTCP.ACTION":
 		dest, ircMsg, err := ircMsgInfo(msg)
 		if err != nil {
-			tp.PublishError(service.MakeID(msg.ID), msg.Network.ID, err)
+			client.tp.PublishError(service.MakeID(msg.ID), msg.Network.ID, err)
 		} else {
 			client.SendAction(dest, ircMsg)
 		}
 	case "info", "info/irc.NOTICE":
 		dest, ircMsg, err := ircMsgInfo(msg)
 		if err != nil {
-			tp.PublishError(service.MakeID(msg.ID), msg.Network.ID, err)
+			client.tp.PublishError(service.MakeID(msg.ID), msg.Network.ID, err)
 		} else {
 			client.SendNotice(dest, ircMsg)
 		}
 	default:
-		tp.PublishError(service.MakeID(msg.ID), msg.Network.ID,
+		client.tp.PublishError(service.MakeID(msg.ID), msg.Network.ID,
 			errors.New("unhandled message of type "+msg.Type))
 	}
 }
 
-func (client *Client) CmdHandler(tp service.Transporter, msg *stdchat.CmdMsg) {
+func (client *Client) CmdHandler(msg *stdchat.CmdMsg) {
 	switch msg.Command {
 	case "raw":
 		if client.svc.CheckArgs(1, msg) {
 			if len(msg.Args) == 1 && msg.Args[0] != "" {
 				client.SendLine(msg.Args[0])
 			} else {
-				tp.PublishError(msg.ID, msg.Network.ID,
+				client.tp.PublishError(msg.ID, msg.Network.ID,
 					errors.New("invalid raw cmd for "+Protocol))
 			}
 		}
 	default:
-		tp.PublishError(msg.ID, msg.Network.ID,
+		client.tp.PublishError(msg.ID, msg.Network.ID,
 			errors.New("unhandled command: "+msg.Command))
 	}
 }
