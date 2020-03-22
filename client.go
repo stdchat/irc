@@ -65,7 +65,6 @@ type Client struct {
 	connState    int32        // atomic: connState*
 	state        int32        // atomic: state*
 	inick        int32        // atomic: nicks[inick%len] or -1
-	unsubscribed int32        // did we unsubscribe-all yet for a disconnect?
 	Verbose      bool         // verbose output to log.Print/Printf
 	forceTLS     int8         // 0 = default, 1 = force TLS, -1 = force not TLS.
 }
@@ -533,7 +532,9 @@ func (client *Client) GetStateInfo() service.ClientStateInfo {
 	defer client.mx.RUnlock()
 	var subs []stdchat.SubscriptionStateInfo
 	for _, channel := range client.channels {
-		subs = append(subs, channel.getStateInfoUnlocked(msg.Network))
+		if channel.joinedUnlocked() {
+			subs = append(subs, channel.getStateInfoUnlocked(msg.Network))
+		}
 	}
 	return service.ClientStateInfo{Network: msg, Subscriptions: subs}
 }
@@ -680,13 +681,12 @@ func (client *Client) connContext() context.Context {
 	return &doneCtx{context.Background(), client.disconn()}
 }
 
-func (client *Client) maybePublishUnsubscribeAll(msgType string, m stdchat.MessageInfo) bool {
-	if !atomic.CompareAndSwapInt32(&client.unsubscribed, 0, 1) {
-		return false
-	}
-	// Send unsubscribe for all channels I'm on.
+func (client *Client) maybeUnsubscribeAll(msgType string, m stdchat.MessageInfo) bool {
+	// Clear channel members, send unsubscribe for all that had members.
 	for _, channel := range client.GetChannels() {
-		client.publishUnsubscribe(channel, msgType, m, nil)
+		if channel.clearMembers() > 0 {
+			client.publishUnsubscribe(channel, msgType, m, nil)
+		}
 	}
 	return true
 }
@@ -724,7 +724,7 @@ func (client *Client) disconnect(cause string) {
 	{
 		m := stdchat.MessageInfo{}
 		m.SetText(cause)
-		client.maybePublishUnsubscribeAll("unsubscribe", m)
+		client.maybeUnsubscribeAll("unsubscribe", m)
 	}
 	{
 		msg := &stdchat.NetMsg{}
@@ -1644,13 +1644,12 @@ func (client *Client) ircEvent(e *irc.Message) {
 			client.support = defaultSupport.clone()
 			client.changedAllSupportUnlocked()
 
-			// Rejoin channels and then clear them out since we're not on them yet.
+			// Auto rejoin channels.
 			// TODO: what if they haven't auth'd yet??
 			for _, channel := range client.channels {
+				// TODO: handle if channel has a key.
 				client.Join(channel.name)
 			}
-			client.channels = nil
-			atomic.StoreInt32(&client.unsubscribed, 0) // Important after channels=nil.
 		}()
 
 		{
@@ -1836,7 +1835,7 @@ func (client *Client) ircEvent(e *irc.Message) {
 		if client.isFromMyself(e) {
 			m := stdchat.MessageInfo{}
 			setMessage(&m, e.Trailing())
-			client.maybePublishUnsubscribeAll("unsubscribe/irc.QUIT", m)
+			client.maybeUnsubscribeAll("unsubscribe/irc.QUIT", m)
 			client.disconnect("quit")
 			// Note: not clearing the channels here,
 			// so that we can re-join them on reconnect!

@@ -135,6 +135,28 @@ func (channel *Channel) IsOn(nick string) Member {
 	return channel.members[i]
 }
 
+func (channel *Channel) joinedUnlocked() bool {
+	return len(channel.members) != 0
+}
+
+// Joined returns true if this channel was joined.
+// Due to rejoining on auto-reconnect, a channel can be kept but not joined yet.
+func (channel *Channel) Joined() bool {
+	channel.client.mx.RLock()
+	x := channel.joinedUnlocked()
+	channel.client.mx.RUnlock()
+	return x
+}
+
+// returns the previous number of members (how many that were cleared)
+func (channel *Channel) clearMembers() int {
+	channel.client.mx.Lock()
+	n := len(channel.members)
+	channel.members = nil
+	channel.client.mx.Unlock()
+	return n
+}
+
 func (channel *Channel) getMembersInfoUnlocked() []stdchat.MemberInfo {
 	members := make([]stdchat.MemberInfo, len(channel.members))
 	for i, member := range channel.members {
