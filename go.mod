@@ -6,7 +6,7 @@ require (
 	github.com/go-irc/irc v2.1.0+incompatible
 	golang.org/x/net v0.0.0-20191116160921-f9c825593386
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0
-	stdchat.org v0.0.0-20200322052832-982a42daeba7
+	stdchat.org v0.0.0-20200325035708-75beee302662
 )
 
 replace github.com/json-iterator/go => github.com/millerlogic/json-iterator-go v1.1.9-0.20191118175040-6551bfde9b40
