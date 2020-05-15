@@ -1113,14 +1113,17 @@ func setMessage(msg *stdchat.MessageInfo, ircMsg string) {
 	}
 }
 
-func (client *Client) setFrom(msg *stdchat.ChatMsg, e *irc.Message) {
+// returns the entity and optional "irc.from.who" value if relevant.
+func (client *Client) getFrom(e *irc.Message) (stdchat.EntityInfo, string) {
 	fromType := ""
 	fromOrig := e.Prefix.String()
 	fromName := e.Name
 	fromID := fromName
+	var resultEntity stdchat.EntityInfo
+	resultWho := ""
 	if fromOrig != "" {
 		if fromOrig != fromName {
-			msg.Values.Set("irc.from.who", fromOrig)
+			resultWho = fromOrig
 		}
 		if strings.ContainsRune(fromOrig, '!') || !strings.ContainsRune(fromName, '.') {
 			fromType = "user"
@@ -1128,12 +1131,21 @@ func (client *Client) setFrom(msg *stdchat.ChatMsg, e *irc.Message) {
 			fromType = "service"
 		}
 		fromID = client.StringToLower(fromName)
-		msg.From.Init(fromID, fromType)
-		msg.From.SetName(fromName, fromName)
+		resultEntity.Init(fromID, fromType)
+		resultEntity.SetName(fromName, fromName)
 	}
+	return resultEntity, resultWho
 }
 
-func (client *Client) initChatMsg(msg *stdchat.ChatMsg, e *irc.Message, msgType string, dest string) {
+func (client *Client) setFrom(msg *stdchat.ChatMsg, e *irc.Message) {
+	ent, who := client.getFrom(e)
+	if who != "" {
+		msg.Values.Set("irc.from.who", who)
+	}
+	msg.From = ent
+}
+
+func (client *Client) initNetMsg(msg *stdchat.NetMsg, e *irc.Message, msgType string) {
 	msgID, _ := e.Tags.GetTag("msgid")
 	if msgID == "" {
 		msgID = service.MakeID("")
@@ -1146,6 +1158,21 @@ func (client *Client) initChatMsg(msg *stdchat.ChatMsg, e *irc.Message, msgType 
 			msg.Time = t
 		}
 	}
+	for tname, tvalue := range e.Tags {
+		switch tname {
+		case "":
+		case "msgid":
+		case "time":
+		case "+draft/reply":
+			// Don't set these.
+		default:
+			msg.Values.Set("irc.tag."+tname, string(tvalue))
+		}
+	}
+}
+
+func (client *Client) initChatMsg(msg *stdchat.ChatMsg, e *irc.Message, msgType string, dest string) {
+	client.initNetMsg(&msg.NetMsg, e, msgType)
 	client.setFrom(msg, e)
 	if dest != "" && dest != "*" {
 		destName := ""
@@ -1183,17 +1210,6 @@ func (client *Client) initChatMsg(msg *stdchat.ChatMsg, e *irc.Message, msgType 
 		msg.Destination.SetName(destName, destName)
 	}
 	msg.ReplyToID, _ = e.Tags.GetTag("+draft/reply") // Trust the user?
-	for tname, tvalue := range e.Tags {
-		switch tname {
-		case "":
-		case "msgid":
-		case "time":
-		case "+draft/reply":
-			// Don't set these.
-		default:
-			msg.Values.Set("irc.tag."+tname, string(tvalue))
-		}
-	}
 }
 
 func (client *Client) newChatMsg(e *irc.Message, msgType string, dest string) *stdchat.ChatMsg {
@@ -1687,8 +1703,9 @@ func (client *Client) ircEvent(e *irc.Message) {
 		}
 		{
 			msg := &stdchat.UserChangedMsg{}
-			client.initChatMsg(&msg.ChatMsg, e, "user-changed/irc."+e.Command, "")
-			msg.User = msg.From
+			client.initNetMsg(&msg.NetMsg, e, "user-changed/irc."+e.Command)
+			userEnt, _ := client.getFrom(e)
+			msg.User = userEnt
 			msg.Info.User.Init(client.StringToLower(newNick), "user")
 			msg.Myself = myself
 			client.tp.Publish(msg.Network.ID, "", "user", msg)
